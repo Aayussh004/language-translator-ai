@@ -1,46 +1,50 @@
-import requests
-import streamlit as st
 import os
+import streamlit as st
+from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
+load_dotenv()
 
-# create a function
+def get_groq_api_key():
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if api_key:
+        return api_key
+    try:
+        return st.secrets["GROQ_API_KEY"]
+    except Exception:
+        return ""
 
-def groq_input_response(language,input_text):
-    json_body={
-        "input":{
-            "language":language,
-            "text":input_text
-        },
-        "kwargs":{},
-        "config":{}
-    }
+def translate_text(language, text):
+    api_key = get_groq_api_key()
+    if not api_key:
+        st.error("Missing GROQ_API_KEY. Add it in Streamlit secrets or environment variables.")
+        return None
 
-    backend_url = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-    response = requests.post(
-        f"{backend_url}/chain/invoke", json=json_body, timeout=60
-    )
-    response.raise_for_status()
-    return response.json()
+    llm = ChatGroq(model="llama-3.1-8b-instant", groq_api_key=api_key)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "Translate the following into {language}:"),
+        ("user", "{text}")
+    ])
+    parser = StrOutputParser()
+    chain = prompt | llm | parser
+    return chain.invoke({"language": language, "text": text})
 
-# streamlit
 st.title("This is a robot to convert texts in different languages")
 
 st.subheader("please select the language you want to convert in:")
-option=st.selectbox(
+option = st.selectbox(
     "Select one language",
-    ("French",
-    "Hindi",
-    "German",
-    "Chinese")
+    ("French", "Hindi", "German", "Chinese")
 )
 
-input_text=st.text_input(f"Write the text you want to convert to {option}")
+input_text = st.text_input(f"Write the text you want to convert to {option}")
 
 if input_text:
     try:
-        res = groq_input_response(option, input_text)
-        st.write(res["output"])
-    except requests.RequestException:
-        st.error("The translation service is unavailable. Please try again shortly.")
-    
-
+        result = translate_text(option, input_text)
+        if result is not None:
+            st.write(result)
+    except Exception as e:
+        st.error(f"Translation failed: {e}")
